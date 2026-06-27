@@ -1,0 +1,72 @@
+# Cluster-scoped Kueue configuration: the FIXED-CAPACITY quota + priority classes
+# that drive preemption. These are the heart of the demo.
+#
+# Ordering note: these objects are Kueue CRs and therefore depend on the Kueue
+# CRDs (installed by cluster/kueue-operator) already existing. They are composed
+# into the same top-level `kubectl apply --server-side -k cluster/` apply, where
+# kubectl orders the CRDs ahead of the CRs. On a brand-new cluster the very first
+# apply can still race the CRD registration; setup_infra.sh retries the apply, and
+# the Hub re-applies cluster/ on each bootstrap — so the config converges.
+#
+# All names here are FIXED (not templated): cluster-scoped objects are shared
+# across every feature namespace, so the namespaced LocalQueue (infra/) points at
+# this ClusterQueue by these literal names.
+
+# --------------------------------------------------------------------------- #
+# ResourceFlavor — maps the logical quota onto the CPU Spot ComputeClass nodes.
+# Job pods that Kueue admits inherit this flavor's nodeSelector, so admitted work
+# lands on the kueue-demo-cpu Spot nodes (cluster/cpu-computeclass.yaml).
+# --------------------------------------------------------------------------- #
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  name: kueue-demo-spot
+spec:
+  nodeLabels:
+    cloud.google.com/compute-class: kueue-demo-cpu
+---
+# --------------------------------------------------------------------------- #
+# ClusterQueue — THE FIXED CAPACITY. nominalQuota: 6 CPU is the whole pool.
+# When it is full and a higher-priority Workload arrives, preemption kicks in.
+#   preemption.withinClusterQueue: LowerPriority
+#     -> a pending Workload may evict an ADMITTED Workload of strictly lower
+#        priority in this same queue to fit. That eviction is the demo's payoff.
+# --------------------------------------------------------------------------- #
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: kueue-demo-clusterqueue
+spec:
+  namespaceSelector: {}        # admit LocalQueues from any namespace
+  preemption:
+    withinClusterQueue: LowerPriority
+    # No borrowing across queues here (single queue), so this is a no-op safeguard.
+    reclaimWithinCohort: Never
+  resourceGroups:
+    - coveredResources: ["cpu", "memory"]
+      flavors:
+        - name: kueue-demo-spot
+          resources:
+            - name: "cpu"
+              nominalQuota: "6"      # <-- the fixed CPU capacity of the demo
+            - name: "memory"
+              nominalQuota: "12Gi"
+---
+# --------------------------------------------------------------------------- #
+# WorkloadPriorityClasses — drive who preempts whom. A Job carries the label
+# kueue.x-k8s.io/priority-class: <name>; Kueue compares these values to decide
+# admission order and preemption (higher value wins).
+# --------------------------------------------------------------------------- #
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: WorkloadPriorityClass
+metadata:
+  name: high-priority
+value: 1000
+description: "High-priority batch work; preempts low-priority jobs when the queue is full."
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: WorkloadPriorityClass
+metadata:
+  name: low-priority
+value: 100
+description: "Low-priority batch work; may be preempted by high-priority jobs."

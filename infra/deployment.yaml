@@ -1,0 +1,57 @@
+# The controller = the demo's data-plane API. It submits batch Jobs into the
+# LocalQueue, reports Kueue Workload admission / preemption state, and lists the
+# job pods with their node + runtime. The Hub polls this Deployment (name MUST
+# equal feature.yaml `deployment_name`) for readiness.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kueue-controller-deployment
+  namespace: ${NAMESPACE}
+  labels:
+    app: kueue-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kueue-controller
+  template:
+    metadata:
+      labels:
+        app: kueue-controller
+    spec:
+      serviceAccountName: kueue-controller
+      containers:
+        - name: controller
+          image: ${KUEUE_IMAGE}
+          # Stable per-cluster tag is reused across builds; Always makes a rebuild
+          # actually get pulled instead of using the node's cached image.
+          imagePullPolicy: Always
+          command: ["uvicorn", "controller:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - containerPort: 8000
+          env:
+            # Read its own namespace at runtime (downward API), never assume default.
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: LOCAL_QUEUE_NAME
+              value: "${LOCAL_QUEUE_NAME}"
+            # The image the controller stamps onto the Job pods it creates (so the
+            # busy-compute payload in app/jobwork.py runs on the cluster). Same
+            # image as the controller, different command.
+            - name: JOB_IMAGE
+              value: "${KUEUE_IMAGE}"
+          startupProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            periodSeconds: 15
+          resources:
+            requests: { cpu: "100m", memory: 256Mi }
+            limits: { cpu: "500m", memory: 512Mi }

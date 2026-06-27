@@ -1,0 +1,55 @@
+# Showcase feature descriptor — see gke_all /feature.md for the full contract.
+name: kueue
+title: Batch Job Queueing & Preemption with Kueue
+description: >-
+  Submit CPU batch jobs against a FIXED quota and watch Kueue admit, queue, and
+  PREEMPT them live — a high-priority job arriving to a full queue evicts a
+  running low-priority job to make room, all on auto-provisioned Spot nodes.
+gke_features:
+  - Kueue Operator
+  - ClusterQueue Fixed Quota
+  - Priority Preemption (Eviction)
+  - Spot VMs / ComputeClass
+
+paths:
+  infra_dir: infra
+  cluster_dir: cluster
+  frontend_dir: frontend
+  playroom_slug: kueue
+
+# Hub polls this Deployment for readiness (ready_replicas == replicas).
+deployment_name: kueue-controller-deployment
+gateway:
+  # Modern class -> a DEDICATED external LB per Gateway (the classic gke-l7-gxlb
+  # shares one LB per cluster, which collides with other features' routes).
+  name: kueue-demo-gw
+  class: gke-l7-global-external-managed
+
+# Single image: the FastAPI controller that submits batch Jobs into the
+# LocalQueue and reports Workload admission / preemption state. The Job pods run
+# a small busy-compute payload baked into this same image (app/jobwork.py).
+build:
+  # Context is the feature root so the image can also bake in frontend/ (for
+  # standalone UI serving); the Dockerfile copies app/ and frontend/.
+  - image: kueue-demo
+    context: .
+    dockerfile: app/Dockerfile
+
+template_vars:
+  - NAMESPACE
+  - PROJECT_NAME
+  - REGION
+  - ARTIFACT_REGISTRY_REPO
+
+# Values the Hub does not supply. Standalone defaults; Hub-standard vars win.
+template_defaults:
+  NAMESPACE: default
+  # Image reference assembled from Hub-standard vars; overridable standalone.
+  KUEUE_IMAGE: "${REGION}-docker.pkg.dev/${PROJECT_NAME}/${ARTIFACT_REGISTRY_REPO}/kueue-demo:latest"
+  # The namespaced LocalQueue Jobs are submitted into; references the cluster-scoped
+  # ClusterQueue (cluster/queue-config.yaml).
+  LOCAL_QUEUE_NAME: kueue-demo-queue
+  CLUSTER_QUEUE_NAME: kueue-demo-clusterqueue
+
+# This feature's own data-plane router, mounted by the Hub at /api/features/kueue.
+hub_router: "hub_router:router"

@@ -1,0 +1,15 @@
+# Namespaced LocalQueue — the per-namespace entrypoint into the cluster-scoped
+# ClusterQueue (cluster/queue-config.yaml). Jobs are submitted with the label
+# kueue.x-k8s.io/queue-name=<this LocalQueue> and Kueue routes their Workloads
+# through the ClusterQueue's fixed quota.
+#
+# The Hub deploys each feature into its own namespace, so this LocalQueue is
+# namespace-portable (${NAMESPACE}). Its name is fixed (matches LOCAL_QUEUE_NAME
+# in feature.yaml / .env) because the controller submits Jobs against it.
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  name: kueue-demo-queue
+  namespace: ${NAMESPACE}
+spec:
+  clusterQueue: kueue-demo-clusterqueue

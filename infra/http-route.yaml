@@ -1,0 +1,19 @@
+# Routes the feature Gateway to the controller (data plane: submit, status,
+# clear). Filter-free and namespace-relative so the Hub's namespace rewrite stays
+# consistent.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kueue-route
+  namespace: ${NAMESPACE}
+spec:
+  parentRefs:
+    - name: kueue-demo-gw
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: kueue-controller
+          port: 80

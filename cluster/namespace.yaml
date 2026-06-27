@@ -1,0 +1,9 @@
+# The Kueue operator's namespace. The upstream config/default bundle references
+# kueue-system, but `kubectl apply -k` does not create a namespace on its own —
+# so it is shipped here as an explicit kustomize resource. kubectl applies
+# Namespaces before namespaced resources, so the operator's objects land here in
+# the same apply.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kueue-system

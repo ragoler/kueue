@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kueue — Batch Queueing & Preemption on GKE</title>
+  <link rel="stylesheet" href="/static/features/kueue/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🎟️</span>
+      <div>
+        <h1>Kueue Batch Queue</h1>
+        <p class="subtitle">Fixed-quota CPU job queueing with priority preemption · GKE</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="mode-badge" class="badge badge-mock">…</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- Controls --------------------------------------------------------- -->
+    <section class="panel controls">
+      <h2>Submit a job</h2>
+
+      <label>Priority
+        <select id="priority">
+          <option value="low" selected>low — preemptible</option>
+          <option value="high">high — preempts low</option>
+        </select>
+        <small class="field-note">
+          A <b>high</b>-priority job arriving at a full queue <b>evicts</b> a
+          running low-priority job to make room.
+        </small>
+      </label>
+
+      <label>Duration
+        <select id="duration">
+          <option value="short" selected>short — ~60s busy-compute</option>
+          <option value="long">long — ~600s busy-compute</option>
+        </select>
+        <small class="field-note">Real prime-sieve CPU work, not a sleep.</small>
+      </label>
+
+      <label>CPU request
+        <select id="cpu">
+          <option value="1">1 CPU</option>
+          <option value="2" selected>2 CPU</option>
+          <option value="3">3 CPU</option>
+        </select>
+        <small class="field-note">The ClusterQueue holds a fixed <b>6 CPU</b> total.</small>
+      </label>
+
+      <button id="submit" class="btn btn-primary">Submit job</button>
+      <button id="clear" class="btn btn-ghost">Clear all jobs</button>
+      <p id="action-note" class="action-note"></p>
+
+      <details class="how">
+        <summary>How it works</summary>
+        <ol>
+          <li>Each submit creates a <b>batch/v1 Job</b> labelled for Kueue
+            (<code>queue-name</code> + <code>priority-class</code>), suspended so
+            <b>Kueue</b> controls scheduling.</li>
+          <li>Kueue admits Jobs into a <b>ClusterQueue</b> with a <b>fixed 6-CPU
+            quota</b>. Work that doesn't fit waits as <b>pending</b>.</li>
+          <li>When a <b>high</b>-priority job needs room, Kueue <b>preempts</b>
+            (evicts) a running <b>low</b>-priority job — watch a row flip to
+            <span class="state state-preempted">PREEMPTED</span>.</li>
+          <li>Admitted pods run on auto-provisioned <b>Spot</b> nodes; the board
+            shows which node and for how long.</li>
+        </ol>
+      </details>
+    </section>
+
+    <!-- Quota + workloads ------------------------------------------------ -->
+    <section class="panel board">
+      <h2>Fixed capacity <span id="quota-label" class="muted"></span></h2>
+      <div class="quota-bar">
+        <div id="quota-fill" class="quota-fill"></div>
+        <span id="quota-text" class="quota-text">—</span>
+      </div>
+
+      <h3>Workloads</h3>
+      <div class="table-wrap">
+        <table class="board-table">
+          <thead>
+            <tr><th>Job</th><th>Priority</th><th>Status</th></tr>
+          </thead>
+          <tbody id="workloads"></tbody>
+        </table>
+      </div>
+      <p id="offline-note" class="offline-note" hidden></p>
+    </section>
+
+    <!-- Pods ------------------------------------------------------------- -->
+    <section class="panel pods-panel">
+      <h2>Running pods <span id="pod-count" class="muted"></span></h2>
+      <div class="table-wrap">
+        <table class="board-table">
+          <thead>
+            <tr><th>Pod</th><th>Node</th><th>Status</th><th>Elapsed</th></tr>
+          </thead>
+          <tbody id="pods"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/features/kueue/app.js"></script>
+</body>
+</html>

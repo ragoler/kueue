@@ -1,0 +1,19 @@
+# Decentralized gateway — the feature ships its own. metadata.name MUST match
+# feature.yaml `gateway.name`.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: kueue-demo-gw
+  namespace: ${NAMESPACE}
+spec:
+  # Modern global external ALB: a DEDICATED load balancer per Gateway. (The
+  # classic gke-l7-gxlb shares one LB per cluster, which collides with other
+  # features' routes on a shared cluster.)
+  gatewayClassName: gke-l7-global-external-managed
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same

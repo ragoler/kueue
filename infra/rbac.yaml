@@ -1,0 +1,69 @@
+# RBAC for the controller: it creates/lists batch Jobs, reads Kueue LocalQueues
+# and Workloads (to report admission / preemption), and reads pods + nodes (to
+# show which job runs on which node and for how long). Namespaced where possible;
+# nodes are cluster-scoped so they need a ClusterRole.
+#
+# Namespace-portable: the Hub rewrites metadata.namespace and the binding subject
+# to the deploy namespace. The admin SA may bind/escalate, so shipping RBAC is fine.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kueue-controller
+  namespace: ${NAMESPACE}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kueue-controller
+  namespace: ${NAMESPACE}
+rules:
+  # Submit / list / delete the demo batch Jobs.
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete", "deletecollection"]
+  # Read Kueue queue + workload state to report admission / preemption.
+  - apiGroups: ["kueue.x-k8s.io"]
+    resources: ["localqueues", "workloads"]
+    verbs: ["get", "list", "watch"]
+  # Read the job pods (node placement, start time, phase) for the live board.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kueue-controller
+  namespace: ${NAMESPACE}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kueue-controller
+subjects:
+  - kind: ServiceAccount
+    name: kueue-controller
+    namespace: ${NAMESPACE}
+---
+# Nodes are cluster-scoped, so reading them (to label which node a pod landed on)
+# needs a ClusterRole. The binding's subject is namespace-rewritten by the Hub.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kueue-controller-node-reader-${NAMESPACE}
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kueue-controller-node-reader-${NAMESPACE}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kueue-controller-node-reader-${NAMESPACE}
+subjects:
+  - kind: ServiceAccount
+    name: kueue-controller
+    namespace: ${NAMESPACE}

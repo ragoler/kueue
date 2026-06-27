@@ -1,0 +1,23 @@
+# Cluster-scoped prerequisites for the kueue feature, installed once per cluster.
+#
+# The Hub discovers a TOP-LEVEL kustomization.yaml in cluster_dir and runs
+# `kubectl apply --server-side -k cluster/` at bootstrap (build_infra.sh). The
+# standalone setup_infra.sh applies this same directory, so the two paths never
+# drift.
+#
+# Composed here so a single apply installs everything cluster-once:
+#   - namespace.yaml          -> the kueue-system Namespace (apply -k won't create it)
+#   - kueue-operator/         -> the Kueue operator + CRDs (remote bundle, pinned)
+#   - cpu-computeclass.yaml   -> the CPU Spot ComputeClass jobs schedule onto (capacity)
+#   - queue-config.yaml       -> ResourceFlavor + ClusterQueue (fixed quota) +
+#                                WorkloadPriorityClasses (preemption). Depends on the
+#                                Kueue CRDs above; kubectl orders CRDs first and
+#                                setup_infra.sh retries on a cold cluster.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - kueue-operator
+  - cpu-computeclass.yaml
+  - queue-config.yaml

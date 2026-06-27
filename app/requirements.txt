@@ -1,0 +1,6 @@
+# Controller runtime deps. The Job pods reuse this same image but only run
+# app/jobwork.py (pure stdlib), so nothing extra is needed for the payload.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+kubernetes==31.0.0
