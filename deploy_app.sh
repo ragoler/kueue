@@ -60,6 +60,14 @@ echo "=== Pushing image ==="
 docker push "${KUEUE_IMAGE}"
 
 echo "=== Deploying per-namespace infra into: ${NAMESPACE} ==="
+# Guard: infra/ contains Kueue CRs (LocalQueue + the queue config). If the operator
+# CRDs aren't registered, the apply fails with a cryptic 'no matches for kind
+# LocalQueue'. Fail fast with the real cause instead.
+if ! kubectl get crd localqueues.kueue.x-k8s.io >/dev/null 2>&1; then
+  echo "Error: Kueue CRDs are not installed on this cluster."
+  echo "       Run ./setup_infra.sh first (it installs the Kueue operator + CRDs)."
+  exit 1
+fi
 kubectl get namespace "${NAMESPACE}" >/dev/null 2>&1 || kubectl create namespace "${NAMESPACE}"
 
 # Force-delete the Gateway, stripping a stuck finalizer if its controller never
