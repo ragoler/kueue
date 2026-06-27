@@ -49,9 +49,11 @@ if [ "$MODE" = "delete" ] || [ "$MODE" = "delete-cluster" ]; then
   if cluster_exists; then
     gcloud container clusters get-credentials "${CLUSTER_NAME}" --zone="${ZONE}" --project="${PROJECT_ID}"
     echo "=== Removing cluster-scoped prerequisites ==="
-    # Single kustomization (operator bundle + ns + ComputeClass + queue config),
-    # mirroring the Hub's `apply -k cluster/`. --ignore-not-found so partial state
-    # tears down cleanly.
+    # The cluster/ kustomization (Kueue release manifest + ComputeClass), mirroring
+    # the Hub's `apply -k cluster/`. The fixed-quota queue config lives in infra/
+    # (applied at deploy time), so remove those cluster-scoped CRs first.
+    # --ignore-not-found so partial state tears down cleanly.
+    kubectl delete -f "${ROOT}/infra/queue-config.yaml" --ignore-not-found || true
     kubectl delete -k "${ROOT}/cluster" --ignore-not-found || true
   else
     echo "Cluster ${CLUSTER_NAME} does not exist; nothing to remove."
@@ -87,27 +89,25 @@ echo "=== Step 2: Getting cluster credentials ==="
 gcloud container clusters get-credentials "${CLUSTER_NAME}" --project="${PROJECT_ID}" --zone="${ZONE}"
 
 # --- Step 3: Cluster-scoped prerequisites (one kustomization) -------------
-# A single top-level kustomization composes the Kueue operator bundle, the
-# kueue-system Namespace (apply -k won't create it otherwise), the CPU Spot
-# ComputeClass, and the fixed-quota queue config — the exact same dir and command
-# the Hub's build_infra.sh runs, so standalone and Hub never drift. Server-side
-# apply because Kueue's CRDs exceed the client-side 256KB annotation limit.
-#
-# CRD ORDERING: queue-config.yaml (ResourceFlavor/ClusterQueue/priorities) depends
-# on the Kueue CRDs installed in the same apply. kubectl orders CRDs first, but on
-# a brand-new cluster the API may not have registered them yet on the first pass —
-# so we retry the apply a few times until the CRs land.
-echo "=== Step 3: Installing cluster prerequisites (Kueue operator + ns + ComputeClass + queue config) ==="
+# The top-level kustomization composes the self-contained Kueue release manifest
+# (operator + CRDs + kueue-system Namespace + internal webhook cert) and the CPU
+# Spot ComputeClass — the exact same dir and command the Hub's build_infra.sh
+# runs, so standalone and Hub never drift. Server-side apply because Kueue's CRDs
+# exceed the client-side 256KB annotation limit. This bundle has NO Kueue CRs, so
+# there is no CRD-registration race; the fixed-quota queue config is applied later
+# by deploy_app.sh (infra/), once the webhook below is ready. A short retry rides
+# out transient apiserver hiccups on a freshly created cluster.
+echo "=== Step 3: Installing cluster prerequisites (Kueue operator + CRDs + CPU ComputeClass) ==="
 apply_cluster() {
   kubectl apply --server-side --force-conflicts -k "${ROOT}/cluster"
 }
 ok=""
-for attempt in 1 2 3 4 5; do
+for attempt in 1 2 3; do
   if apply_cluster; then
     ok="1"; break
   fi
-  echo "    cluster apply attempt ${attempt} failed (likely Kueue CRDs not registered yet); retrying in 15s..."
-  sleep 15
+  echo "    cluster apply attempt ${attempt} failed; retrying in 10s..."
+  sleep 10
 done
 if [ -z "${ok}" ]; then
   echo "Error: cluster prerequisites did not apply after retries. Inspect with:"
@@ -115,7 +115,10 @@ if [ -z "${ok}" ]; then
   exit 1
 fi
 
-echo "=== Step 4: Waiting for the Kueue controller to be ready ==="
-kubectl -n kueue-system rollout status deploy/kueue-controller-manager --timeout=300s || true
+# Wait for the operator: its validating webhook must be serving before deploy_app.sh
+# creates the ResourceFlavor/ClusterQueue/WorkloadPriorityClasses (infra/), or those
+# CR applies fail with a webhook connection error.
+echo "=== Step 4: Waiting for the Kueue controller (webhook) to be ready ==="
+kubectl -n kueue-system rollout status deploy/kueue-controller-manager --timeout=300s
 
 echo "=== Setup complete. Next: ./deploy_app.sh ==="

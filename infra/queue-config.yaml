@@ -1,16 +1,17 @@
 # Cluster-scoped Kueue configuration: the FIXED-CAPACITY quota + priority classes
 # that drive preemption. These are the heart of the demo.
 #
-# Ordering note: these objects are Kueue CRs and therefore depend on the Kueue
-# CRDs (installed by cluster/kueue-operator) already existing. They are composed
-# into the same top-level `kubectl apply --server-side -k cluster/` apply, where
-# kubectl orders the CRDs ahead of the CRs. On a brand-new cluster the very first
-# apply can still race the CRD registration; setup_infra.sh retries the apply, and
-# the Hub re-applies cluster/ on each bootstrap — so the config converges.
+# Why this lives in infra/ (deploy time) and NOT cluster/ (bootstrap): these are
+# Kueue CRs whose creation is validated by the Kueue operator's webhook. Applying
+# them at bootstrap would race the operator coming up (and the Hub's build_infra.sh
+# applies cluster/ once, with no retry). By deploy time the operator — installed
+# from cluster/ at bootstrap (Hub) or by setup_infra.sh Step 3+4 (standalone) — is
+# already serving its webhook, so these apply cleanly. They are cluster-scoped, so
+# kubectl ignores the deploy namespace; re-applying across namespaces is idempotent.
 #
 # All names here are FIXED (not templated): cluster-scoped objects are shared
-# across every feature namespace, so the namespaced LocalQueue (infra/) points at
-# this ClusterQueue by these literal names.
+# across every feature namespace, so the namespaced LocalQueue (localqueue.yaml)
+# points at this ClusterQueue by these literal names.
 
 # --------------------------------------------------------------------------- #
 # ResourceFlavor — maps the logical quota onto the CPU Spot ComputeClass nodes.

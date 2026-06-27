@@ -6,18 +6,25 @@
 # drift.
 #
 # Composed here so a single apply installs everything cluster-once:
-#   - namespace.yaml          -> the kueue-system Namespace (apply -k won't create it)
-#   - kueue-operator/         -> the Kueue operator + CRDs (remote bundle, pinned)
-#   - cpu-computeclass.yaml   -> the CPU Spot ComputeClass jobs schedule onto (capacity)
-#   - queue-config.yaml       -> ResourceFlavor + ClusterQueue (fixed quota) +
-#                                WorkloadPriorityClasses (preemption). Depends on the
-#                                Kueue CRDs above; kubectl orders CRDs first and
-#                                setup_infra.sh retries on a cold cluster.
+#   - the Kueue release manifest -> operator + all CRDs + the kueue-system
+#     Namespace + an INTERNAL webhook cert (no cert-manager dependency). Using the
+#     self-contained release artifact (not config/default) avoids both a
+#     cert-manager prerequisite and a duplicate-Namespace clash with a locally
+#     shipped namespace.yaml.
+#   - cpu-computeclass.yaml -> the CPU Spot ComputeClass jobs schedule onto.
+#
+# NOTE: the fixed-quota queue config (ResourceFlavor + ClusterQueue +
+# WorkloadPriorityClasses) is NOT here. Those are Kueue CRs whose creation is
+# gated by the operator's validating webhook, so they live in infra/ and are
+# applied at deploy time — after the operator (installed here at bootstrap) is up.
+# Keeping them out of this bundle also makes the Hub's single, no-retry bootstrap
+# apply of cluster/ safe.
+#
+# Keep the pinned tag in lockstep with README/ARCHITECTURE. v0.18.2 is the latest
+# stable Kueue release at authoring time; bump deliberately.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - namespace.yaml
-  - kueue-operator
+  - "https://github.com/kubernetes-sigs/kueue/releases/download/v0.18.2/manifests.yaml"
   - cpu-computeclass.yaml
-  - queue-config.yaml

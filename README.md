@@ -26,9 +26,9 @@ as a submodule, driven by `feature.yaml`).
 | Piece | File | Role |
 |---|---|---|
 | CPU Spot `ComputeClass` (`nodePoolAutoCreation`) | `cluster/cpu-computeclass.yaml` | the physical capacity (NAP creates Spot nodes) |
-| Kueue `ResourceFlavor` -> the ComputeClass | `cluster/queue-config.yaml` | maps logical quota onto those nodes |
-| `ClusterQueue` with fixed `nominalQuota: 6` CPU + `preemption.withinClusterQueue: LowerPriority` | `cluster/queue-config.yaml` | **the fixed quota + the preemption rule** |
-| `WorkloadPriorityClass` high/low | `cluster/queue-config.yaml` | drive who preempts whom |
+| Kueue `ResourceFlavor` -> the ComputeClass | `infra/queue-config.yaml` | maps logical quota onto those nodes |
+| `ClusterQueue` with fixed `nominalQuota: 6` CPU + `preemption.withinClusterQueue: LowerPriority` | `infra/queue-config.yaml` | **the fixed quota + the preemption rule** |
+| `WorkloadPriorityClass` high/low | `infra/queue-config.yaml` | drive who preempts whom |
 | namespaced `LocalQueue` -> the ClusterQueue | `infra/localqueue.yaml` | per-namespace entrypoint jobs are submitted into |
 | FastAPI controller | `app/controller.py` | submits labelled Jobs, reports admission/preemption |
 | busy-compute payload | `app/jobwork.py` | the REAL CPU work each Job runs |
@@ -81,9 +81,10 @@ falls back to its own origin / the Gateway IP (standalone).
 
 ## Kueue version
 
-The operator is pinned to **Kueue v0.18.2** (latest stable at authoring) in
-`cluster/kueue-operator/kustomization.yaml`. Bump deliberately and keep this README
-in sync.
+The operator is installed from the self-contained **Kueue v0.18.2** release manifest
+(latest stable at authoring), pinned in the URL in `cluster/kustomization.yaml`. The
+release artifact ships an internal webhook cert, so **cert-manager is not required**.
+Bump deliberately and keep this README in sync.
 
 ## NO mocking
 

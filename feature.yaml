@@ -47,7 +47,7 @@ template_defaults:
   # Image reference assembled from Hub-standard vars; overridable standalone.
   KUEUE_IMAGE: "${REGION}-docker.pkg.dev/${PROJECT_NAME}/${ARTIFACT_REGISTRY_REPO}/kueue-demo:latest"
   # The namespaced LocalQueue Jobs are submitted into; references the cluster-scoped
-  # ClusterQueue (cluster/queue-config.yaml).
+  # ClusterQueue (infra/queue-config.yaml).
   LOCAL_QUEUE_NAME: kueue-demo-queue
   CLUSTER_QUEUE_NAME: kueue-demo-clusterqueue
 

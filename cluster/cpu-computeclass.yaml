@@ -5,7 +5,7 @@
 # demand and scales them back to zero when the queue drains.
 #
 # This ComputeClass is the *physical* capacity. Kueue's ClusterQueue nominalQuota
-# (cluster/queue-config.yaml) is the *logical* fixed quota layered on top of it —
+# (infra/queue-config.yaml) is the *logical* fixed quota layered on top of it —
 # that quota is what makes high-priority jobs preempt low-priority ones rather
 # than simply autoscaling more nodes.
 apiVersion: cloud.google.com/v1

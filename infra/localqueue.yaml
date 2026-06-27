@@ -1,5 +1,5 @@
 # Namespaced LocalQueue — the per-namespace entrypoint into the cluster-scoped
-# ClusterQueue (cluster/queue-config.yaml). Jobs are submitted with the label
+# ClusterQueue (infra/queue-config.yaml). Jobs are submitted with the label
 # kueue.x-k8s.io/queue-name=<this LocalQueue> and Kueue routes their Workloads
 # through the ClusterQueue's fixed quota.
 #

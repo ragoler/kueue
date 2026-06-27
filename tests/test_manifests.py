@@ -156,7 +156,7 @@ def test_localqueue_references_clusterqueue():
 def test_clusterqueue_has_fixed_quota_and_preemption():
     """The ClusterQueue must declare a fixed CPU quota and enable preemption."""
     cq = None
-    for doc in yaml.safe_load_all((CLUSTER / "queue-config.yaml").read_text()):
+    for doc in yaml.safe_load_all((INFRA / "queue-config.yaml").read_text()):
         if doc and doc.get("kind") == "ClusterQueue":
             cq = doc
     assert cq is not None
@@ -172,7 +172,7 @@ def test_clusterqueue_has_fixed_quota_and_preemption():
 
 def test_priority_classes_present():
     names = {}
-    for doc in yaml.safe_load_all((CLUSTER / "queue-config.yaml").read_text()):
+    for doc in yaml.safe_load_all((INFRA / "queue-config.yaml").read_text()):
         if doc and doc.get("kind") == "WorkloadPriorityClass":
             names[doc["metadata"]["name"]] = doc["value"]
     assert "high-priority" in names and "low-priority" in names
@@ -181,7 +181,7 @@ def test_priority_classes_present():
 
 def test_resourceflavor_maps_to_computeclass():
     rf = None
-    for doc in yaml.safe_load_all((CLUSTER / "queue-config.yaml").read_text()):
+    for doc in yaml.safe_load_all((INFRA / "queue-config.yaml").read_text()):
         if doc and doc.get("kind") == "ResourceFlavor":
             rf = doc
     assert rf is not None
@@ -197,7 +197,11 @@ def test_resourceflavor_maps_to_computeclass():
 
 
 def test_cluster_kustomization_pins_kueue_version():
-    text = (CLUSTER / "kueue-operator" / "kustomization.yaml").read_text()
-    assert "kubernetes-sigs/kueue/config/default?ref=v" in text
+    # The operator is installed from the self-contained Kueue release manifest,
+    # referenced directly by the top-level cluster kustomization (no subdir,
+    # no config/default, no cert-manager). The version is pinned in the URL.
+    text = (CLUSTER / "kustomization.yaml").read_text()
+    assert "kubernetes-sigs/kueue/releases/download/v" in text
     # A concrete pinned tag, not a moving ref.
-    assert re.search(r"ref=v\d+\.\d+\.\d+", text), "Kueue operator must pin a real version tag"
+    assert re.search(r"releases/download/v\d+\.\d+\.\d+/manifests\.yaml", text), \
+        "Kueue operator must pin a real release version"

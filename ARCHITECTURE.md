@@ -119,14 +119,22 @@ to gate admission and to re-suspend on preemption.
 
 ---
 
-## 7. CRD ordering (the one gotcha)
+## 7. Operator-before-CRs ordering (the one gotcha)
 
-`cluster/queue-config.yaml` (ResourceFlavor / ClusterQueue / WorkloadPriorityClass)
-are Kueue CRs and depend on the Kueue CRDs installed by `cluster/kueue-operator`.
-They are composed into the **same** `kubectl apply --server-side -k cluster/` apply,
-where kubectl orders CRDs ahead of CRs. On a brand-new cluster the API may not have
-registered the CRDs on the first pass, so `setup_infra.sh` **retries the apply** a few
-times until the CRs land, and the Hub re-applies `cluster/` on each bootstrap.
+`infra/queue-config.yaml` (ResourceFlavor / ClusterQueue / WorkloadPriorityClass)
+are Kueue CRs whose creation is gated by the Kueue operator's **validating webhook**.
+So they are deliberately kept out of the bootstrap bundle and applied at **deploy
+time** instead:
+
+- `cluster/` installs only the self-contained Kueue **release manifest** (operator +
+  CRDs + `kueue-system` Namespace + an *internal* webhook cert — no cert-manager) plus
+  the CPU ComputeClass. This is what the Hub's `build_infra.sh` applies once at
+  bootstrap (no retry), and what `setup_infra.sh` applies standalone.
+- By the time `infra/` is applied (Hub deploy, or `deploy_app.sh` standalone), the
+  operator is already serving its webhook, so the queue CRs apply cleanly.
+- `setup_infra.sh` **waits** for `deploy/kueue-controller-manager` to be Ready
+  (Step 4) before handing off to `deploy_app.sh`, closing the race for the standalone
+  path. The queue CRs are cluster-scoped, so kubectl ignores the deploy namespace.
 
 ---
 
