@@ -175,8 +175,8 @@ def test_priority_classes_present():
     for doc in yaml.safe_load_all((INFRA / "queue-config.yaml").read_text()):
         if doc and doc.get("kind") == "WorkloadPriorityClass":
             names[doc["metadata"]["name"]] = doc["value"]
-    assert "high-priority" in names and "low-priority" in names
-    assert names["high-priority"] > names["low-priority"]
+    assert {"high-priority", "medium-priority", "low-priority"} <= set(names)
+    assert names["high-priority"] > names["medium-priority"] > names["low-priority"]
 
 
 def test_resourceflavor_maps_to_computeclass():

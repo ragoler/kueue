@@ -47,8 +47,10 @@ APP_LABEL = "kueue-demo"  # tags every Job/pod we create so we can list & clear 
 QUEUE_LABEL = "kueue.x-k8s.io/queue-name"
 PRIORITY_LABEL = "kueue.x-k8s.io/priority-class"
 
-# Map the UI's coarse choices onto concrete values.
-PRIORITY_CLASSES = {"high": "high-priority", "low": "low-priority"}
+# Map the UI's coarse choices onto concrete values. Ordered high -> low; the
+# numeric WorkloadPriorityClass values live in infra/queue-config.yaml
+# (high=1000 > medium=500 > low=100), so high preempts medium+low, medium low.
+PRIORITY_CLASSES = {"high": "high-priority", "medium": "medium-priority", "low": "low-priority"}
 # CPU size -> (cpu request, memory request). Memory tracks CPU so quota math is simple.
 CPU_SIZES = {
     "1": ("1", "2Gi"),
@@ -237,6 +239,25 @@ def summarize_workload(wl: dict) -> dict:
             if f"-{key}-" in owner or owner.endswith(f"-{key}"):
                 priority_class = cls
                 break
+
+    # The Job's CPU request + busy-compute duration live in the Workload's first
+    # podSet template (Kueue mirrors the Job's pod spec there).
+    cpu = None
+    duration_seconds = None
+    pod_sets = spec.get("podSets") or []
+    if pod_sets:
+        container = (
+            pod_sets[0].get("template", {}).get("spec", {}).get("containers") or [{}]
+        )[0]
+        cpu = (container.get("resources", {}).get("requests", {}) or {}).get("cpu")
+        for env in container.get("env", []) or []:
+            if env.get("name") == "JOB_DURATION_SECONDS" and env.get("value") is not None:
+                try:
+                    duration_seconds = int(env["value"])
+                except (TypeError, ValueError):
+                    duration_seconds = None
+                break
+
     return {
         "workload": meta.get("name"),
         "job": owner,
@@ -244,7 +265,36 @@ def summarize_workload(wl: dict) -> dict:
         "reason": reason,
         "priority": spec.get("priority"),
         "priority_class": priority_class,
+        "cpu": cpu,
+        "duration_seconds": duration_seconds,
     }
+
+
+def _to_cpu(qty) -> float | None:
+    """Parse a k8s CPU quantity ('6', '500m', 6) into a float number of CPUs."""
+    if qty is None:
+        return None
+    s = str(qty)
+    try:
+        return int(s[:-1]) / 1000.0 if s.endswith("m") else float(s)
+    except ValueError:
+        return None
+
+
+def _sum_cpu(flavors_usage) -> float | None:
+    """Sum reserved CPU across flavors from a LocalQueue status block
+    (each flavor's resources carry {name, total}). None if no cpu entry seen."""
+    if not isinstance(flavors_usage, list):
+        return None
+    total, found = 0.0, False
+    for fl in flavors_usage:
+        for res in fl.get("resources", []) or []:
+            if res.get("name") == "cpu":
+                v = _to_cpu(res.get("total", res.get("borrowed", "0")))
+                if v is not None:
+                    total += v
+                    found = True
+    return total if found else None
 
 
 # --------------------------------------------------------------------------- #
@@ -269,7 +319,10 @@ KUEUE_VERSION = "v1beta2"
 # Endpoints
 # --------------------------------------------------------------------------- #
 @app.get("/healthz")
-def healthz() -> dict:
+async def healthz() -> dict:
+    # async on purpose: runs on the event loop, so the readiness/liveness probe
+    # never queues behind synchronous k8s calls in the threadpool under load
+    # (a single pod dropping out of the LB caused "no healthy upstream").
     return {"status": "ok"}
 
 
@@ -349,13 +402,22 @@ def pods() -> dict:
     out = []
     for p in resp.items:
         start = p.status.start_time
-        elapsed = int((now - start).total_seconds()) if start else None
+        phase = p.status.phase
+        finished = phase in ("Succeeded", "Failed")
+        # Freeze elapsed at the container's termination time for finished pods so
+        # the board stops counting; running pods tick against now.
+        end = now
+        cs = p.status.container_statuses or []
+        if finished and cs and cs[0].state and cs[0].state.terminated:
+            end = cs[0].state.terminated.finished_at or now
+        elapsed = int((end - start).total_seconds()) if start else None
         out.append(
             {
                 "pod_name": p.metadata.name,
                 "job": (p.metadata.labels or {}).get("job-name"),
                 "node": p.spec.node_name,
-                "status": p.status.phase,
+                "status": phase,
+                "finished": finished,
                 "started": start.isoformat() if start else None,
                 "elapsed_seconds": elapsed,
             }
@@ -377,12 +439,35 @@ def quota() -> dict:
         raise HTTPException(status_code=503, detail=f"cannot read quota: {exc}")
 
     status = lq.get("status", {})
+    cq_name = lq.get("spec", {}).get("clusterQueue")
+    flavors_usage = status.get("flavorsReservation", status.get("flavorUsage"))
+
+    # Used CPU: sum the cpu reservation across flavors (status uses {name,total}).
+    used_cpu = _sum_cpu(flavors_usage)
+
+    # Total CPU: the ClusterQueue's fixed nominalQuota (spec.resourceGroups).
+    total_cpu = None
+    if cq_name:
+        try:
+            cq = custom.get_cluster_custom_object(
+                KUEUE_GROUP, KUEUE_VERSION, "clusterqueues", cq_name
+            )
+            for rg in cq.get("spec", {}).get("resourceGroups", []):
+                for fl in rg.get("flavors", []):
+                    for res in fl.get("resources", []):
+                        if res.get("name") == "cpu" and res.get("nominalQuota") is not None:
+                            total_cpu = _to_cpu(res["nominalQuota"])
+        except Exception:
+            logger.warning("reading ClusterQueue nominalQuota failed", exc_info=True)
+
     return {
         "queue": LOCAL_QUEUE_NAME,
-        "cluster_queue": lq.get("spec", {}).get("clusterQueue"),
+        "cluster_queue": cq_name,
         "admitted_workloads": status.get("admittedWorkloads"),
         "pending_workloads": status.get("pendingWorkloads"),
-        "flavors_usage": status.get("flavorsReservation", status.get("flavorUsage")),
+        "flavors_usage": flavors_usage,
+        "total_cpu": total_cpu,
+        "used_cpu": used_cpu,
     }
 
 

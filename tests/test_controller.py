@@ -119,6 +119,37 @@ def test_summarize_workload_priority_from_owner_when_class_absent():
     }
     assert controller.summarize_workload(low)["priority_class"] == "low-priority"
 
+    medium = {
+        "metadata": {"name": "job-z-1a2",
+                     "ownerReferences": [{"kind": "Job", "name": "kueue-demo-medium-aaa999"}]},
+        "spec": {"priority": 500},
+        "status": {"conditions": [{"type": "Admitted", "status": "True"}]},
+    }
+    assert controller.summarize_workload(medium)["priority_class"] == "medium-priority"
+
+
+def test_summarize_workload_extracts_cpu_and_duration():
+    # CPU request + busy-compute duration come from the Workload's first podSet.
+    wl = {
+        "metadata": {"name": "wl", "ownerReferences": [{"kind": "Job", "name": "kueue-demo-low-x"}]},
+        "spec": {
+            "priority": 100,
+            "podSets": [{"template": {"spec": {"containers": [{
+                "resources": {"requests": {"cpu": "3", "memory": "6Gi"}},
+                "env": [{"name": "JOB_DURATION_SECONDS", "value": "600"}],
+            }]}}}],
+        },
+        "status": {"conditions": [{"type": "Admitted", "status": "True"}]},
+    }
+    s = controller.summarize_workload(wl)
+    assert s["cpu"] == "3"
+    assert s["duration_seconds"] == 600
+
+    # Missing podSets -> graceful None, None.
+    bare = {"metadata": {"name": "b"}, "spec": {"priority": 100}, "status": {}}
+    s2 = controller.summarize_workload(bare)
+    assert s2["cpu"] is None and s2["duration_seconds"] is None
+
 
 # --------------------------------------------------------------------------- #
 # /submit with the k8s client mocked
@@ -134,7 +165,7 @@ def test_healthz(client):
 
 def test_options(client):
     body = client.get("/options").json()
-    assert set(body["priorities"]) == {"high", "low"}
+    assert set(body["priorities"]) == {"high", "medium", "low"}
     assert "short" in body["durations"]
 
 

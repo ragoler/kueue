@@ -10,7 +10,10 @@ metadata:
   labels:
     app: kueue-controller
 spec:
-  replicas: 1
+  # Two replicas: the controller is a stateless proxy over the k8s API, so a
+  # single pod being recreated/evicted no longer blacks out the data plane
+  # ("no healthy upstream"). The LB keeps a healthy backend during rollouts.
+  replicas: 2
   selector:
     matchLabels:
       app: kueue-controller
@@ -20,6 +23,16 @@ spec:
         app: kueue-controller
     spec:
       serviceAccountName: kueue-controller
+      # Spread the replicas across nodes so one node going away can't take both.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: kueue-controller
       containers:
         - name: controller
           image: ${KUEUE_IMAGE}
