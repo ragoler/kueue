@@ -6,7 +6,7 @@
 # The Hub deploys each feature into its own namespace, so this LocalQueue is
 # namespace-portable (${NAMESPACE}). Its name is fixed (matches LOCAL_QUEUE_NAME
 # in feature.yaml / .env) because the controller submits Jobs against it.
-apiVersion: kueue.x-k8s.io/v1beta1
+apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
 metadata:
   name: kueue-demo-queue
