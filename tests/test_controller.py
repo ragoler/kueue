@@ -96,6 +96,30 @@ def test_summarize_workload_states():
     assert controller.summarize_workload(pending)["state"] == "pending"
 
 
+def test_summarize_workload_priority_from_owner_when_class_absent():
+    # Real Kueue copies neither the priority-class label nor a class NAME onto the
+    # Workload (only the numeric spec.priority), so priority_class must be derived
+    # from the owning Job's name.
+    high = {
+        "metadata": {"name": "job-x-46108",
+                     "ownerReferences": [{"kind": "Job", "name": "kueue-demo-high-abc123"}]},
+        "spec": {"priority": 1000},  # no priorityClassName / priorityClassSource
+        "status": {"conditions": [{"type": "Admitted", "status": "True"}]},
+    }
+    s = controller.summarize_workload(high)
+    assert s["state"] == "admitted"
+    assert s["priority_class"] == "high-priority"
+
+    low = {
+        "metadata": {"name": "job-y-9f0",
+                     "ownerReferences": [{"kind": "Job", "name": "kueue-demo-low-def456"}]},
+        "spec": {"priority": 100},
+        "status": {"conditions": [{"type": "Admitted", "status": "True"},
+                                  {"type": "Evicted", "status": "True", "reason": "Preempted"}]},
+    }
+    assert controller.summarize_workload(low)["priority_class"] == "low-priority"
+
+
 # --------------------------------------------------------------------------- #
 # /submit with the k8s client mocked
 # --------------------------------------------------------------------------- #
@@ -136,10 +160,21 @@ def test_submit_rejects_bad_priority(client):
 def test_workloads_filters_to_demo_app(client):
     items = {
         "items": [
-            {"metadata": {"name": "ours", "labels": {"app": controller.APP_LABEL}},
+            # Realistic Kueue Workload: no `app` label (only job-uid), identified
+            # by its owning Job's name prefix.
+            {"metadata": {"name": "ours",
+                          "labels": {"kueue.x-k8s.io/job-uid": "uid-1"},
+                          "ownerReferences": [{"kind": "Job", "name": "kueue-demo-low-aaa111"}]},
+             "spec": {"priority": 100},
+             "status": {"conditions": [{"type": "Admitted", "status": "True"}]}},
+            # Legacy path still works if a Kueue config copies the app label.
+            {"metadata": {"name": "ours-labelled", "labels": {"app": controller.APP_LABEL},
+                          "ownerReferences": [{"kind": "Job", "name": "other-thing"}]},
              "spec": {"priority": 100, "priorityClassName": "low-priority"},
              "status": {"conditions": [{"type": "Admitted", "status": "True"}]}},
-            {"metadata": {"name": "someone-else", "labels": {"app": "other"}},
+            # Someone else's workload: no app label, non-demo owner -> excluded.
+            {"metadata": {"name": "someone-else", "labels": {"app": "other"},
+                          "ownerReferences": [{"kind": "Job", "name": "unrelated-job"}]},
              "spec": {}, "status": {}},
         ]
     }
@@ -149,4 +184,4 @@ def test_workloads_filters_to_demo_app(client):
         r = client.get("/workloads")
     assert r.status_code == 200
     names = [w["workload"] for w in r.json()["workloads"]]
-    assert names == ["ours"]
+    assert names == ["ours", "ours-labelled"]

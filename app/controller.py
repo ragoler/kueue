@@ -227,7 +227,16 @@ def summarize_workload(wl: dict) -> dict:
         (o.get("name") for o in meta.get("ownerReferences", []) if o.get("kind") == "Job"),
         meta.get("name"),
     )
+    # Kueue copies neither the Job's priority-class label nor a class NAME onto the
+    # Workload spec (only the numeric spec.priority), so when priorityClassName is
+    # absent, fall back to the owning Job's name — the controller always stamps it
+    # as kueue-demo-<priority>-<hash> (build_job_manifest).
     priority_class = spec.get("priorityClassName") or spec.get("priorityClassSource")
+    if not priority_class and owner:
+        for key, cls in PRIORITY_CLASSES.items():
+            if f"-{key}-" in owner or owner.endswith(f"-{key}"):
+                priority_class = cls
+                break
     return {
         "workload": meta.get("name"),
         "job": owner,
@@ -313,11 +322,16 @@ def workloads() -> dict:
 
     out = []
     for wl in resp.get("items", []):
+        summary = summarize_workload(wl)
         labels = wl.get("metadata", {}).get("labels", {})
-        # Only our demo workloads (Kueue copies the Job's labels onto the Workload).
-        if labels.get("app") != APP_LABEL:
+        job = summary.get("job") or ""
+        # Identify our demo workloads. Kueue does NOT copy the Job's `app` label
+        # onto the Workload (only kueue.x-k8s.io/job-uid), so match on the owning
+        # Job's name prefix; still honor the app label in case a future Kueue
+        # config (labelKeysToCopy) propagates it.
+        if labels.get("app") != APP_LABEL and not job.startswith(f"{APP_LABEL}-"):
             continue
-        out.append(summarize_workload(wl))
+        out.append(summary)
     return {"namespace": POD_NAMESPACE, "workloads": out}
 
 

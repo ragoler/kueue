@@ -23,12 +23,19 @@ echo "=== Waiting for the controller to be Ready ==="
 kubectl -n "${NAMESPACE}" rollout status deployment/kueue-controller-deployment --timeout=300s
 
 echo "=== Discovering Gateway IP ==="
+# Read the IP from the Gateway's OWN status, which is scoped to the cluster the
+# current kubectl context points at. Never query gcloud forwarding-rules by name:
+# that search is project-wide and would match a same-named Gateway on a different
+# cluster (e.g. a stray kueue-demo-gw elsewhere), returning the wrong IP. Only
+# trust the address once the Gateway reports Programmed=True, so we don't grab a
+# transient/stale address mid-reconcile.
 gateway_ip() {
-  local ip
-  ip=$(kubectl -n "${NAMESPACE}" get gateway "${GATEWAY_NAME}" -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || true)
-  [ -z "${ip}" ] && ip=$(gcloud compute forwarding-rules list --global --project="${PROJECT_ID}" \
-    --filter="name~gkegw1.*-${NAMESPACE}-${GATEWAY_NAME}" --format="value(IPAddress)" 2>/dev/null | head -1)
-  echo "${ip}"
+  local prog
+  prog=$(kubectl -n "${NAMESPACE}" get gateway "${GATEWAY_NAME}" \
+    -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}' 2>/dev/null || true)
+  [ "${prog}" = "True" ] || return 0
+  kubectl -n "${NAMESPACE}" get gateway "${GATEWAY_NAME}" \
+    -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || true
 }
 for i in {1..30}; do
   GATEWAY_IP=$(gateway_ip)
@@ -36,7 +43,8 @@ for i in {1..30}; do
   sleep 10
 done
 if [ -z "${GATEWAY_IP:-}" ]; then
-  echo "Error: Gateway did not receive an IP within 5 minutes."
+  echo "Error: Gateway ${GATEWAY_NAME} did not become Programmed with an IP within 5 minutes."
+  echo "       Inspect: kubectl -n ${NAMESPACE} get gateway ${GATEWAY_NAME} -o wide"
   exit 1
 fi
 echo "Gateway IP: ${GATEWAY_IP}"
