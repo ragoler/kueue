@@ -262,7 +262,7 @@ def _k8s():
 
 
 KUEUE_GROUP = "kueue.x-k8s.io"
-KUEUE_VERSION = "v1beta1"
+KUEUE_VERSION = "v1beta2"
 
 
 # --------------------------------------------------------------------------- #
