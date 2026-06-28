@@ -32,7 +32,7 @@ def test_config_mock(client):
 
 def test_options_safe_offline(client):
     body = client.get("/api/features/kueue/options").json()
-    assert set(body["priorities"]) == {"high", "low"}
+    assert set(body["priorities"]) == {"high", "medium", "low"}
 
 
 def test_workloads_is_honest_empty(client):

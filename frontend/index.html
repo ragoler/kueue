@@ -28,11 +28,13 @@
       <label>Priority
         <select id="priority">
           <option value="low" selected>low — preemptible</option>
-          <option value="high">high — preempts low</option>
+          <option value="medium">medium — preempts low</option>
+          <option value="high">high — preempts medium & low</option>
         </select>
         <small class="field-note">
-          A <b>high</b>-priority job arriving at a full queue <b>evicts</b> a
-          running low-priority job to make room.
+          Three tiers (<b>high</b> &gt; <b>medium</b> &gt; <b>low</b>). A
+          higher-priority job arriving at a full queue <b>evicts</b> a running
+          lower-priority job to make room.
         </small>
       </label>
 
@@ -65,8 +67,8 @@
             <b>Kueue</b> controls scheduling.</li>
           <li>Kueue admits Jobs into a <b>ClusterQueue</b> with a <b>fixed 6-CPU
             quota</b>. Work that doesn't fit waits as <b>pending</b>.</li>
-          <li>When a <b>high</b>-priority job needs room, Kueue <b>preempts</b>
-            (evicts) a running <b>low</b>-priority job — watch a row flip to
+          <li>When a higher-priority job needs room, Kueue <b>preempts</b>
+            (evicts) a running lower-priority job — watch a row flip to
             <span class="state state-preempted">PREEMPTED</span>.</li>
           <li>Admitted pods run on auto-provisioned <b>Spot</b> nodes; the board
             shows which node and for how long.</li>
@@ -74,37 +76,28 @@
       </details>
     </section>
 
-    <!-- Quota + workloads ------------------------------------------------ -->
+    <!-- Capacity + unified per-job board --------------------------------- -->
     <section class="panel board">
       <h2>Fixed capacity <span id="quota-label" class="muted"></span></h2>
       <div class="quota-bar">
         <div id="quota-fill" class="quota-fill"></div>
         <span id="quota-text" class="quota-text">—</span>
       </div>
+      <p id="capacity-line" class="capacity-line">—</p>
 
-      <h3>Workloads</h3>
+      <h3>Jobs <span id="job-count" class="muted"></span></h3>
       <div class="table-wrap">
         <table class="board-table">
           <thead>
-            <tr><th>Job</th><th>Priority</th><th>Status</th></tr>
+            <tr>
+              <th>Job</th><th>Priority</th><th>Duration</th><th>CPU</th>
+              <th>Status</th><th>Node</th><th>Elapsed</th>
+            </tr>
           </thead>
-          <tbody id="workloads"></tbody>
+          <tbody id="board"></tbody>
         </table>
       </div>
       <p id="offline-note" class="offline-note" hidden></p>
-    </section>
-
-    <!-- Pods ------------------------------------------------------------- -->
-    <section class="panel pods-panel">
-      <h2>Running pods <span id="pod-count" class="muted"></span></h2>
-      <div class="table-wrap">
-        <table class="board-table">
-          <thead>
-            <tr><th>Pod</th><th>Node</th><th>Status</th><th>Elapsed</th></tr>
-          </thead>
-          <tbody id="pods"></tbody>
-        </table>
-      </div>
     </section>
   </main>
 

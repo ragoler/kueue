@@ -66,7 +66,7 @@ body {
 
 .layout {
   display: grid;
-  grid-template-columns: 300px 1fr 1fr;
+  grid-template-columns: 300px 1fr;
   gap: 18px;
   padding: 18px 24px 40px;
   align-items: start;
@@ -124,6 +124,7 @@ body {
   font-size: 12px; font-weight: 700; color: var(--ink);
   text-shadow: 0 1px 2px rgba(0,0,0,.5);
 }
+.capacity-line { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
 
 /* ---- tables ---------------------------------------------------------- */
 .table-wrap { overflow-x: auto; }
@@ -141,6 +142,9 @@ body {
   0% { background: rgba(255,107,107,.25); }
   100% { background: transparent; }
 }
+/* Finished jobs: greyed out, elapsed frozen server-side. */
+.row-finished { opacity: .5; }
+.row-finished:hover { opacity: .75; }
 
 .state {
   font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
@@ -153,6 +157,7 @@ body {
 
 .prio { font-size: 12px; font-weight: 600; }
 .prio-high { color: var(--high); }
+.prio-medium { color: var(--warn); }
 .prio-low { color: var(--low); }
 
 .offline-note { margin-top: 12px; font-size: 12px; color: var(--warn); line-height: 1.4; }

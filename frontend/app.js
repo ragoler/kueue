@@ -12,7 +12,7 @@
 
 const HUB_BASE = "/api/features/kueue";
 
-const QUOTA_CPU = 6; // matches ClusterQueue nominalQuota (cluster/queue-config.yaml)
+const QUOTA_CPU = 6; // last-resort default; the live total comes from /quota.total_cpu
 
 const els = {
   mode: document.getElementById("mode-badge"),
@@ -25,10 +25,10 @@ const els = {
   quotaLabel: document.getElementById("quota-label"),
   quotaFill: document.getElementById("quota-fill"),
   quotaText: document.getElementById("quota-text"),
-  workloads: document.getElementById("workloads"),
+  capacityLine: document.getElementById("capacity-line"),
+  board: document.getElementById("board"),
+  jobCount: document.getElementById("job-count"),
   offlineNote: document.getElementById("offline-note"),
-  pods: document.getElementById("pods"),
-  podCount: document.getElementById("pod-count"),
 };
 
 let cfg = { mode: "MOCK", dataBase: HUB_BASE };
@@ -139,21 +139,27 @@ const STATE_CLASS = {
 };
 
 function renderQuota(q) {
-  // Derive used CPU from admitted pods if the queue status doesn't expose it.
-  let used = null;
-  if (q && Array.isArray(q.flavors_usage)) {
+  const total = q && q.total_cpu != null ? q.total_cpu : QUOTA_CPU;
+  let used = q && q.used_cpu != null ? q.used_cpu : null;
+  // Fallback: derive used CPU from the flavor reservation if not provided.
+  if (used === null && q && Array.isArray(q.flavors_usage)) {
     for (const fl of q.flavors_usage) {
       for (const res of fl.resources || []) {
         if (res.name === "cpu") used = parseFloat(res.total || res.borrowed || "0");
       }
     }
   }
-  if (used === null && q && q.admitted_cpu != null) used = q.admitted_cpu;
   const usedTxt = used === null ? "?" : used;
-  const pct = used === null ? 0 : Math.min(100, (used / QUOTA_CPU) * 100);
+  const pct = used === null ? 0 : Math.min(100, (used / total) * 100);
   els.quotaFill.style.width = pct + "%";
   els.quotaFill.classList.toggle("full", pct >= 99);
-  els.quotaText.textContent = `${usedTxt} / ${QUOTA_CPU} CPU`;
+  els.quotaText.textContent = `${usedTxt} / ${total} CPU`;
+  if (used !== null) {
+    const free = Math.max(0, total - used);
+    els.capacityLine.textContent = `${used} of ${total} CPU used · ${free} free`;
+  } else {
+    els.capacityLine.textContent = `Fixed capacity: ${total} CPU`;
+  }
   if (q) {
     const a = q.admitted_workloads ?? 0;
     const p = q.pending_workloads ?? 0;
@@ -161,53 +167,60 @@ function renderQuota(q) {
   }
 }
 
-function renderWorkloads(list) {
-  els.workloads.innerHTML = "";
-  if (!list.length) {
+// One row per Job: Workload state/priority/duration/cpu joined with its pod's
+// node + (frozen-when-finished) elapsed. Solves correlating the old two tables.
+function renderBoard(workloads, pods) {
+  // Map job -> best pod (prefer a running pod, else the most recent by start).
+  const podByJob = {};
+  for (const p of pods) {
+    if (!p.job) continue;
+    const cur = podByJob[p.job];
+    if (!cur) { podByJob[p.job] = p; continue; }
+    const better = !p.finished && cur.finished;
+    const newer = (p.started || "") > (cur.started || "");
+    if (better || (p.finished === cur.finished && newer)) podByJob[p.job] = p;
+  }
+
+  els.board.innerHTML = "";
+  els.jobCount.textContent = workloads.length ? `· ${workloads.length}` : "";
+  if (!workloads.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="3" class="empty">No workloads.</td>`;
-    els.workloads.appendChild(tr);
+    tr.innerHTML = `<td colspan="7" class="empty">No jobs.</td>`;
+    els.board.appendChild(tr);
     return;
   }
-  for (const w of list) {
-    const tr = document.createElement("tr");
+  for (const w of workloads) {
+    const pod = podByJob[w.job] || null;
     const cls = STATE_CLASS[w.state] || "state-pending";
     const label = (w.state || "pending").toUpperCase();
+    const isFinished = w.state === "finished" || (pod && pod.finished);
+    const elapsed = pod && pod.elapsed_seconds != null ? `${pod.elapsed_seconds}s` : "—";
+    const tr = document.createElement("tr");
     tr.innerHTML =
       `<td class="mono">${w.job || w.workload || "—"}</td>` +
       `<td>${prettyPriority(w.priority_class)}</td>` +
-      `<td><span class="state ${cls}">${label}</span></td>`;
+      `<td>${prettyDuration(w.duration_seconds)}</td>` +
+      `<td>${w.cpu != null ? w.cpu : "—"}</td>` +
+      `<td><span class="state ${cls}">${label}</span></td>` +
+      `<td class="mono">${pod && pod.node ? pod.node : "—"}</td>` +
+      `<td>${elapsed}</td>`;
     if (w.state === "preempted") tr.classList.add("row-preempted");
-    els.workloads.appendChild(tr);
+    if (isFinished) tr.classList.add("row-finished");
+    els.board.appendChild(tr);
   }
 }
 
 function prettyPriority(pc) {
   if (!pc) return "—";
   if (pc.includes("high")) return `<span class="prio prio-high">high</span>`;
+  if (pc.includes("medium")) return `<span class="prio prio-medium">medium</span>`;
   if (pc.includes("low")) return `<span class="prio prio-low">low</span>`;
   return pc;
 }
 
-function renderPods(list) {
-  els.pods.innerHTML = "";
-  els.podCount.textContent = list.length ? `· ${list.length}` : "";
-  if (!list.length) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="4" class="empty">No running pods.</td>`;
-    els.pods.appendChild(tr);
-    return;
-  }
-  for (const p of list) {
-    const tr = document.createElement("tr");
-    const elapsed = p.elapsed_seconds == null ? "—" : `${p.elapsed_seconds}s`;
-    tr.innerHTML =
-      `<td class="mono">${p.pod_name}</td>` +
-      `<td class="mono">${p.node || "—"}</td>` +
-      `<td>${p.status || "—"}</td>` +
-      `<td>${elapsed}</td>`;
-    els.pods.appendChild(tr);
-  }
+function prettyDuration(secs) {
+  if (secs == null) return "—";
+  return secs >= 60 && secs % 60 === 0 ? `${secs / 60}m` : `${secs}s`;
 }
 
 function showOffline(text) {
@@ -227,8 +240,7 @@ async function refresh() {
     const p = pRes.ok ? await pRes.json() : { pods: [] };
     const q = qRes.ok ? await qRes.json() : null;
 
-    renderWorkloads(w.workloads || []);
-    renderPods(p.pods || []);
+    renderBoard(w.workloads || [], p.pods || []);
     renderQuota(q);
     showOffline(cfg.mode === "MOCK" ? (w.note || q?.note || "") : "");
   } catch (_) {

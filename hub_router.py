@@ -75,7 +75,7 @@ async def config_endpoint() -> dict:
 def options() -> dict:
     """Static submit-form choices — safe to serve offline (no fabricated state)."""
     return {
-        "priorities": ["high", "low"],
+        "priorities": ["high", "medium", "low"],
         "durations": {"short": 60, "long": 600},
         "cpu_sizes": ["1", "2", "3"],
         "queue": "kueue-demo-queue",
