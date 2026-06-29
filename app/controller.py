@@ -267,6 +267,8 @@ def summarize_workload(wl: dict) -> dict:
         "priority_class": priority_class,
         "cpu": cpu,
         "duration_seconds": duration_seconds,
+        # When the Workload was created — effectively the job's submission time.
+        "submitted": meta.get("creationTimestamp"),
     }
 
 
@@ -407,9 +409,11 @@ def pods() -> dict:
         # Freeze elapsed at the container's termination time for finished pods so
         # the board stops counting; running pods tick against now.
         end = now
+        finished_at = None
         cs = p.status.container_statuses or []
         if finished and cs and cs[0].state and cs[0].state.terminated:
-            end = cs[0].state.terminated.finished_at or now
+            finished_at = cs[0].state.terminated.finished_at
+            end = finished_at or now
         elapsed = int((end - start).total_seconds()) if start else None
         out.append(
             {
@@ -419,6 +423,7 @@ def pods() -> dict:
                 "status": phase,
                 "finished": finished,
                 "started": start.isoformat() if start else None,
+                "finished_at": finished_at.isoformat() if finished_at else None,
                 "elapsed_seconds": elapsed,
             }
         )
@@ -485,3 +490,39 @@ def clear_jobs() -> dict:
         logger.error("clearing jobs failed", exc_info=True)
         raise HTTPException(status_code=503, detail=f"cannot clear jobs: {exc}")
     return {"status": "cleared", "namespace": POD_NAMESPACE}
+
+
+def _job_is_finished(job) -> bool:
+    """A Job is finished if it has a completion time or a Complete/Failed condition."""
+    st = job.status
+    if getattr(st, "completion_time", None) or getattr(st, "failed", None):
+        return True
+    for c in getattr(st, "conditions", None) or []:
+        if c.type in ("Complete", "Failed") and c.status == "True":
+            return True
+    return False
+
+
+@app.delete("/jobs/finished")
+def clear_finished_jobs() -> dict:
+    """Delete only completed/failed demo Jobs; leave pending/running ones running."""
+    try:
+        batch, _, _ = _k8s()
+        jobs = batch.list_namespaced_job(POD_NAMESPACE, label_selector=f"app={APP_LABEL}")
+    except Exception as exc:
+        logger.error("listing jobs failed", exc_info=True)
+        raise HTTPException(status_code=503, detail=f"cannot list jobs: {exc}")
+
+    deleted = []
+    for j in jobs.items:
+        if not _job_is_finished(j):
+            continue
+        try:
+            batch.delete_namespaced_job(
+                j.metadata.name, POD_NAMESPACE, propagation_policy="Background"
+            )
+            deleted.append(j.metadata.name)
+        except Exception:
+            logger.warning("deleting finished job %s failed", j.metadata.name, exc_info=True)
+    return {"status": "cleared_finished", "deleted": deleted, "count": len(deleted),
+            "namespace": POD_NAMESPACE}
