@@ -21,6 +21,7 @@ const els = {
   cpu: document.getElementById("cpu"),
   submit: document.getElementById("submit"),
   clear: document.getElementById("clear"),
+  clearFinished: document.getElementById("clear-finished"),
   actionNote: document.getElementById("action-note"),
   quotaLabel: document.getElementById("quota-label"),
   quotaFill: document.getElementById("quota-fill"),
@@ -81,6 +82,7 @@ function applyConfigUI() {
   const mock = cfg.mode === "MOCK";
   els.submit.disabled = mock;
   els.clear.disabled = mock;
+  els.clearFinished.disabled = mock;
 }
 
 /* ---- actions ---------------------------------------------------------- */
@@ -127,6 +129,21 @@ async function clearJobs() {
     note(e.message, true);
   } finally {
     els.clear.disabled = cfg.mode === "MOCK";
+  }
+}
+
+async function clearFinishedJobs() {
+  els.clearFinished.disabled = true;
+  try {
+    const r = await fetch(dataUrl("/jobs/finished"), { method: "DELETE", headers: dataHeaders() });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `clear finished failed: ${r.status}`);
+    note(`Cleared ${data.count ?? 0} finished job(s)`, false);
+    await refresh();
+  } catch (e) {
+    note(e.message, true);
+  } finally {
+    els.clearFinished.disabled = cfg.mode === "MOCK";
   }
 }
 
@@ -185,7 +202,7 @@ function renderBoard(workloads, pods) {
   els.jobCount.textContent = workloads.length ? `· ${workloads.length}` : "";
   if (!workloads.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="7" class="empty">No jobs.</td>`;
+    tr.innerHTML = `<td colspan="8" class="empty">No jobs.</td>`;
     els.board.appendChild(tr);
     return;
   }
@@ -195,19 +212,31 @@ function renderBoard(workloads, pods) {
     const label = (w.state || "pending").toUpperCase();
     const isFinished = w.state === "finished" || (pod && pod.finished);
     const elapsed = pod && pod.elapsed_seconds != null ? `${pod.elapsed_seconds}s` : "—";
+    // When finished, show the completion time right next to the status badge.
+    const completedAt = isFinished && pod && pod.finished_at ? fmtTime(pod.finished_at) : null;
+    const statusCell = `<span class="state ${cls}">${label}</span>` +
+      (completedAt ? ` <span class="completed-at">@ ${completedAt}</span>` : "");
     const tr = document.createElement("tr");
     tr.innerHTML =
       `<td class="mono">${w.job || w.workload || "—"}</td>` +
       `<td>${prettyPriority(w.priority_class)}</td>` +
       `<td>${prettyDuration(w.duration_seconds)}</td>` +
       `<td>${w.cpu != null ? w.cpu : "—"}</td>` +
-      `<td><span class="state ${cls}">${label}</span></td>` +
+      `<td>${w.submitted ? fmtTime(w.submitted) : "—"}</td>` +
+      `<td>${statusCell}</td>` +
       `<td class="mono">${pod && pod.node ? pod.node : "—"}</td>` +
       `<td>${elapsed}</td>`;
     if (w.state === "preempted") tr.classList.add("row-preempted");
     if (isFinished) tr.classList.add("row-finished");
     els.board.appendChild(tr);
   }
+}
+
+// ISO timestamp -> local HH:MM:SS (board is a live view, so local time reads best).
+function fmtTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "—";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function prettyPriority(pc) {
@@ -251,6 +280,7 @@ async function refresh() {
 /* ---- init ----------------------------------------------------------- */
 els.submit.addEventListener("click", submitJob);
 els.clear.addEventListener("click", clearJobs);
+els.clearFinished.addEventListener("click", clearFinishedJobs);
 
 (async function init() {
   await loadConfig();

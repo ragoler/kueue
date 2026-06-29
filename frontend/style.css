@@ -155,6 +155,8 @@ body {
 .state-preempted { color: #2a0b0b; background: var(--danger); }
 .state-finished { color: var(--muted); border: 1px solid var(--border); }
 
+.completed-at { color: var(--muted); font-size: 11px; }
+
 .prio { font-size: 12px; font-weight: 600; }
 .prio-high { color: var(--high); }
 .prio-medium { color: var(--warn); }

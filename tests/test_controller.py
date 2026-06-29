@@ -216,3 +216,38 @@ def test_workloads_filters_to_demo_app(client):
     assert r.status_code == 200
     names = [w["workload"] for w in r.json()["workloads"]]
     assert names == ["ours", "ours-labelled"]
+
+
+def test_clear_finished_jobs_only_deletes_finished(client):
+    # Build fake Job objects with varied completion state.
+    def job(name, *, completion_time=None, failed=None, conditions=None):
+        st = mock.MagicMock()
+        st.completion_time = completion_time
+        st.failed = failed
+        st.conditions = conditions
+        j = mock.MagicMock()
+        j.metadata.name = name
+        j.status = st
+        return j
+
+    def cond(t, s):
+        c = mock.MagicMock(); c.type = t; c.status = s
+        return c
+
+    jobs = mock.MagicMock()
+    jobs.items = [
+        job("done-complete", completion_time="t"),
+        job("done-failed", conditions=[cond("Failed", "True")]),
+        job("running"),  # no completion -> kept
+        job("complete-cond", conditions=[cond("Complete", "True")]),
+    ]
+    fake_batch = mock.MagicMock()
+    fake_batch.list_namespaced_job.return_value = jobs
+    with mock.patch.object(controller, "_k8s", return_value=(fake_batch, mock.MagicMock(), mock.MagicMock())):
+        r = client.delete("/jobs/finished")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] == 3
+    assert set(body["deleted"]) == {"done-complete", "done-failed", "complete-cond"}
+    deleted = {c.args[0] for c in fake_batch.delete_namespaced_job.call_args_list}
+    assert "running" not in deleted
