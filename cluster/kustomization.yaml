@@ -28,3 +28,10 @@ kind: Kustomization
 resources:
   - "https://github.com/kubernetes-sigs/kueue/releases/download/v0.18.2/manifests.yaml"
   - cpu-computeclass.yaml
+
+# Confine Kueue's deployment/pod/statefulset/job/jobset/ray webhooks to ONLY this
+# feature's namespace (label kueue.x-k8s.io/managed=true), so the rest of the Hub
+# is not coupled to the Kueue controller's uptime. See the patch files for details.
+patches:
+  - path: patch-webhook-scope-mutating.yaml
+  - path: patch-webhook-scope-validating.yaml

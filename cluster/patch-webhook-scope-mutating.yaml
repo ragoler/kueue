@@ -1,0 +1,45 @@
+# Scope Kueue's MUTATING webhooks to ONLY this feature's own namespace.
+#
+# By default the Kueue release installs cluster-wide webhooks (failurePolicy: Fail)
+# on deployments, pods, statefulsets, jobs, jobsets and ray* — matching every
+# namespace except kube-system/kueue-system. On a SHARED Hub cluster that couples
+# the whole platform to Kueue's uptime: if the Kueue controller is down, NOTHING
+# can create a Deployment/Pod anywhere, and the JobSet/Ray features can't create
+# their own CRs either.
+#
+# We only want Kueue to manage workloads in its OWN namespace, so we replace each
+# of those webhooks' namespaceSelector with a label match. The Kueue deploy labels
+# its namespace `kueue.x-k8s.io/managed=true` (infra/namespace.yaml); every other
+# namespace is then invisible to these webhooks, fully decoupling the rest of the
+# Hub from Kueue. (Strategic-merge by webhook name; only namespaceSelector is
+# replaced, caBundle/rules/etc. are preserved. The kueue-CR webhooks —
+# clusterqueue/resourceflavor/workload/cohort — are left untouched.)
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: kueue-mutating-webhook-configuration
+webhooks:
+  - name: mdeployment.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: mpod.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: mstatefulset.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: mjob.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: mjobset.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: mraycluster.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: mrayjob.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: mrayservice.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }

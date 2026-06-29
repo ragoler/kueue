@@ -1,0 +1,34 @@
+# Scope Kueue's VALIDATING webhooks to ONLY this feature's own namespace.
+# See patch-webhook-scope-mutating.yaml for the full rationale: the default Kueue
+# install gates deployments/pods/statefulsets/jobs/jobsets/ray* cluster-wide with
+# failurePolicy: Fail, coupling the whole Hub to Kueue's uptime. Confine them to
+# the namespace labeled kueue.x-k8s.io/managed=true (infra/namespace.yaml).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: kueue-validating-webhook-configuration
+webhooks:
+  - name: vdeployment.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: vpod.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: vstatefulset.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: vjob.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: vjobset.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: vraycluster.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: vrayjob.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: vrayservice.kb.io
+    namespaceSelector:
+      matchLabels: { kueue.x-k8s.io/managed: "true" }
