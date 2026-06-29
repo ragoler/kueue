@@ -1,34 +1,27 @@
-# Scope Kueue's VALIDATING webhooks to ONLY this feature's own namespace.
-# See patch-webhook-scope-mutating.yaml for the full rationale: the default Kueue
-# install gates deployments/pods/statefulsets/jobs/jobsets/ray* cluster-wide with
-# failurePolicy: Fail, coupling the whole Hub to Kueue's uptime. Confine them to
-# the namespace labeled kueue.x-k8s.io/managed=true (infra/namespace.yaml).
+# Constrain Kueue's VALIDATING webhooks the same way as the mutating ones: manage
+# ONLY the demo's batch Jobs, ONLY in this feature's namespace. See
+# patch-webhook-scope-mutating.yaml for the full rationale (cluster-wide Fail
+# webhooks coupled the whole Hub to Kueue and gated this feature's own controller
+# pods). Keep vjob (scoped to the managed namespace); delete the rest.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
   name: kueue-validating-webhook-configuration
 webhooks:
-  - name: vdeployment.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
-  - name: vpod.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
-  - name: vstatefulset.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
   - name: vjob.kb.io
     namespaceSelector:
       matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: vdeployment.kb.io
+    $patch: delete
+  - name: vpod.kb.io
+    $patch: delete
+  - name: vstatefulset.kb.io
+    $patch: delete
   - name: vjobset.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
+    $patch: delete
   - name: vraycluster.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
+    $patch: delete
   - name: vrayjob.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
+    $patch: delete
   - name: vrayservice.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
+    $patch: delete

@@ -1,45 +1,42 @@
-# Scope Kueue's MUTATING webhooks to ONLY this feature's own namespace.
+# Constrain Kueue's MUTATING webhooks so Kueue manages ONLY the demo's batch Jobs,
+# and ONLY in this feature's own namespace.
 #
-# By default the Kueue release installs cluster-wide webhooks (failurePolicy: Fail)
-# on deployments, pods, statefulsets, jobs, jobsets and ray* — matching every
-# namespace except kube-system/kueue-system. On a SHARED Hub cluster that couples
-# the whole platform to Kueue's uptime: if the Kueue controller is down, NOTHING
-# can create a Deployment/Pod anywhere, and the JobSet/Ray features can't create
-# their own CRs either.
+# The Kueue release installs cluster-wide webhooks (failurePolicy: Fail) on
+# deployments, pods, statefulsets, jobs, jobsets and ray*. On a shared Hub that is
+# doubly harmful:
+#   1. It couples the WHOLE cluster to Kueue's uptime (a down Kueue controller
+#      blocks every Deployment/Pod create — that broke the admin bootstrap), and
+#   2. once this feature's namespace is opted in, the deployment/pod webhooks gate
+#      THIS feature's OWN controller Deployment/pods, so the controller never
+#      starts ("No pods active in namespace gke-showcase-kueue").
 #
-# We only want Kueue to manage workloads in its OWN namespace, so we replace each
-# of those webhooks' namespaceSelector with a label match. The Kueue deploy labels
-# its namespace `kueue.x-k8s.io/managed=true` (infra/namespace.yaml); every other
-# namespace is then invisible to these webhooks, fully decoupling the rest of the
-# Hub from Kueue. (Strategic-merge by webhook name; only namespaceSelector is
-# replaced, caBundle/rules/etc. are preserved. The kueue-CR webhooks —
-# clusterqueue/resourceflavor/workload/cohort — are left untouched.)
+# This demo only queues `batch/v1` Jobs, so:
+#   - mjob: keep, scoped to namespaces labeled kueue.x-k8s.io/managed=true (only
+#     this feature's namespace carries it — see infra/namespace.yaml).
+#   - everything else (deployment/pod/statefulset/jobset/ray*): DELETE — Kueue
+#     should never touch those kinds. Job-level management is all the demo needs;
+#     the Job's pods are admitted by suspending/resuming the Job, no pod webhook.
+# (Strategic-merge by webhook name; the kueue-CR webhooks
+# clusterqueue/resourceflavor/workload/cohort are left untouched.)
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
   name: kueue-mutating-webhook-configuration
 webhooks:
-  - name: mdeployment.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
-  - name: mpod.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
-  - name: mstatefulset.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
   - name: mjob.kb.io
     namespaceSelector:
       matchLabels: { kueue.x-k8s.io/managed: "true" }
+  - name: mdeployment.kb.io
+    $patch: delete
+  - name: mpod.kb.io
+    $patch: delete
+  - name: mstatefulset.kb.io
+    $patch: delete
   - name: mjobset.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
+    $patch: delete
   - name: mraycluster.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
+    $patch: delete
   - name: mrayjob.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
+    $patch: delete
   - name: mrayservice.kb.io
-    namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
+    $patch: delete
