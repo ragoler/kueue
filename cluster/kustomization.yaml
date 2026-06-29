@@ -29,9 +29,10 @@ resources:
   - "https://github.com/kubernetes-sigs/kueue/releases/download/v0.18.2/manifests.yaml"
   - cpu-computeclass.yaml
 
-# Confine Kueue's deployment/pod/statefulset/job/jobset/ray webhooks to ONLY this
-# feature's namespace (label kueue.x-k8s.io/managed=true), so the rest of the Hub
-# is not coupled to the Kueue controller's uptime. See the patch files for details.
+# Keep only Kueue's job webhook (scoped to this feature's namespace via the built-in
+# kubernetes.io/metadata.name label) and delete the deployment/pod/statefulset/jobset/
+# ray webhooks, so the rest of the Hub is not coupled to the Kueue controller's uptime
+# and Kueue never gates this feature's own controller pods. See the patch files.
 patches:
   - path: patch-webhook-scope-mutating.yaml
   - path: patch-webhook-scope-validating.yaml

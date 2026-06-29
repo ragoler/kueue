@@ -1,8 +1,8 @@
 # Constrain Kueue's VALIDATING webhooks the same way as the mutating ones: manage
-# ONLY the demo's batch Jobs, ONLY in this feature's namespace. See
-# patch-webhook-scope-mutating.yaml for the full rationale (cluster-wide Fail
-# webhooks coupled the whole Hub to Kueue and gated this feature's own controller
-# pods). Keep vjob (scoped to the managed namespace); delete the rest.
+# ONLY the demo's batch Jobs, ONLY in this feature's namespace (matched via the
+# built-in kubernetes.io/metadata.name label — gke-showcase-kueue under the Hub,
+# default standalone). See patch-webhook-scope-mutating.yaml for the full rationale.
+# Keep vjob (scoped); delete the rest.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
@@ -10,7 +10,10 @@ metadata:
 webhooks:
   - name: vjob.kb.io
     namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: ["gke-showcase-kueue", "default"]
   - name: vdeployment.kb.io
     $patch: delete
   - name: vpod.kb.io

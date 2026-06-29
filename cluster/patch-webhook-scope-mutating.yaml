@@ -3,19 +3,19 @@
 #
 # The Kueue release installs cluster-wide webhooks (failurePolicy: Fail) on
 # deployments, pods, statefulsets, jobs, jobsets and ray*. On a shared Hub that is
-# doubly harmful:
-#   1. It couples the WHOLE cluster to Kueue's uptime (a down Kueue controller
-#      blocks every Deployment/Pod create — that broke the admin bootstrap), and
-#   2. once this feature's namespace is opted in, the deployment/pod webhooks gate
-#      THIS feature's OWN controller Deployment/pods, so the controller never
-#      starts ("No pods active in namespace gke-showcase-kueue").
+# doubly harmful: (1) it couples the WHOLE cluster to Kueue's uptime (a down Kueue
+# controller blocked the admin bootstrap), and (2) the deployment/pod webhooks gate
+# THIS feature's OWN controller Deployment/pods, so the controller never starts.
 #
 # This demo only queues `batch/v1` Jobs, so:
-#   - mjob: keep, scoped to namespaces labeled kueue.x-k8s.io/managed=true (only
-#     this feature's namespace carries it — see infra/namespace.yaml).
+#   - mjob: keep, but scope it to this feature's namespace only. We match on the
+#     built-in `kubernetes.io/metadata.name` label (every namespace gets it
+#     automatically) — Hub deploys land in `gke-showcase-kueue`, standalone uses
+#     `default`. No custom namespace label (and therefore no Namespace object in
+#     infra/, which the Hub can't apply through its namespaced path) is required.
 #   - everything else (deployment/pod/statefulset/jobset/ray*): DELETE — Kueue
-#     should never touch those kinds. Job-level management is all the demo needs;
-#     the Job's pods are admitted by suspending/resuming the Job, no pod webhook.
+#     should never touch those kinds. Job-level admission (suspend/resume) brings the
+#     Job's pods up itself, so no pod webhook is needed.
 # (Strategic-merge by webhook name; the kueue-CR webhooks
 # clusterqueue/resourceflavor/workload/cohort are left untouched.)
 apiVersion: admissionregistration.k8s.io/v1
@@ -25,7 +25,10 @@ metadata:
 webhooks:
   - name: mjob.kb.io
     namespaceSelector:
-      matchLabels: { kueue.x-k8s.io/managed: "true" }
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: ["gke-showcase-kueue", "default"]
   - name: mdeployment.kb.io
     $patch: delete
   - name: mpod.kb.io
