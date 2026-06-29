@@ -34,6 +34,10 @@ const els = {
 
 let cfg = { mode: "MOCK", dataBase: HUB_BASE };
 let timer = null;
+// LIVE only: the browser submits to the feature's Gateway directly, and the global LB
+// is PROGRAMMED minutes after the Deployment is ready. Until the data path serves, show
+// "provisioning…" rather than falling back to the hub_router (which has no /submit -> 404).
+let dataReady = false;
 
 /* ---- auth + bases ----------------------------------------------------- */
 function jwt() {
@@ -79,10 +83,11 @@ async function loadConfig() {
 function applyConfigUI() {
   els.mode.textContent = cfg.mode;
   els.mode.className = "badge " + (cfg.mode === "MOCK" ? "badge-mock" : "badge-live");
-  const mock = cfg.mode === "MOCK";
-  els.submit.disabled = mock;
-  els.clear.disabled = mock;
-  els.clearFinished.disabled = mock;
+  // Start disabled; the refresh loop enables the controls once the data plane is
+  // actually reachable (LIVE) — in MOCK they stay disabled.
+  els.submit.disabled = true;
+  els.clear.disabled = true;
+  els.clearFinished.disabled = true;
 }
 
 /* ---- actions ---------------------------------------------------------- */
@@ -257,8 +262,58 @@ function showOffline(text) {
   els.offlineNote.textContent = text || "";
 }
 
+/* ---- data-plane readiness gate --------------------------------------- */
+// Re-resolve the Gateway IP (it programs minutes after the Deployment is ready) and
+// probe the data path itself. Sets dataReady. LIVE only; MOCK is handled separately.
+async function refreshDataPlane() {
+  const override = new URLSearchParams(location.search).get("api");
+  try {
+    const r = await fetch(`${HUB_BASE}/config`, { headers: hubHeaders() });
+    if (r.ok) {
+      const c = await r.json();
+      cfg.mode = c.mode || "LIVE";
+      if (cfg.mode === "MOCK") { dataReady = false; return; }
+      // Empty when the Hub has no PROGRAMMED gateway yet (get_gateway_ip returns "").
+      cfg.dataBase = override || (c.gateway_ip ? `http://${c.gateway_ip}` : "");
+    } else {
+      cfg.mode = "LIVE";
+      cfg.dataBase = override || location.origin; // standalone (no Hub)
+    }
+  } catch (_) {
+    cfg.mode = "LIVE";
+    cfg.dataBase = override || location.origin;
+  }
+  if (!cfg.dataBase) { dataReady = false; return; }
+  try {
+    const h = await fetch(`${cfg.dataBase}/healthz`, { headers: dataHeaders() });
+    dataReady = h.ok;
+  } catch (_) { dataReady = false; }
+}
+
+function renderProvisioning() {
+  els.mode.textContent = cfg.mode;
+  els.mode.className = "badge badge-live";
+  els.submit.disabled = true;
+  els.clear.disabled = true;
+  els.clearFinished.disabled = true;
+  showOffline(cfg.dataBase
+    ? "Provisioning the load balancer — this can take a few minutes…"
+    : "Waiting for the gateway IP…");
+}
+
 /* ---- refresh loop ---------------------------------------------------- */
 async function refresh() {
+  // LIVE submits to the Gateway directly — gate on it actually serving, so the submit
+  // button never POSTs to the hub_router (no /submit there -> 404) before it's ready.
+  if (cfg.mode !== "MOCK" && !dataReady) {
+    await refreshDataPlane();
+    if (!dataReady) { renderProvisioning(); return; }
+    // Just became reachable — enable the controls and clear the provisioning note.
+    els.submit.disabled = false;
+    els.clear.disabled = false;
+    els.clearFinished.disabled = false;
+    showOffline("");
+  }
   try {
     const [wRes, pRes, qRes] = await Promise.all([
       fetch(dataUrl("/workloads"), { headers: dataHeaders() }),
